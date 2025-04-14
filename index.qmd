@@ -1,0 +1,349 @@
+---
+title: "Insectos acuáticos y su relación con variables fisicoquímicas en rios de Ecuador, Etiopia y Vietnam"
+format: html
+editor_options: 
+  chunk_output_type: console
+output-dir: docs
+---
+
+## Objetivos
+
+General
+
+- Evaluar la relación entre variables fisicoquímicas y comunidades de insectos acuáticos en rios de Ecuador, Etiopia y Vietnam
+
+
+
+Específicos
+
+- Establecer disimilitudes en las comunidades de insectos acuáticos 
+
+- Determinar la influecia de la estacionalidad sobre las abundancias de insectos acuáticos
+
+- Determinar la influencia de variables fisicoquímicas sobre la abundancia de insectos acuáticos
+
+
+```{r, echo=FALSE}
+
+#| label: setup
+#| include: false
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 7,
+  fig.height = 5,
+  fig.align = "center"
+)
+
+```
+
+### Activando librerias a utilizar
+
+```{r, librerias, eval=TRUE}
+library(tidyverse)
+library(car)
+library(ggstatsplot)
+library(vegan)
+library(goeveg)
+library(psych)
+library(ggcorrplot)
+library(factoextra)
+library(performance)
+```
+
+
+### Filtrando la base de datos
+
+```{r, cargando base de datos}
+macroffqq <- read.csv("Bases/Abiotic_Preferences_of_Macroinvertebrates.csv")
+```
+
+```{r, estructura, eval=FALSE}
+#Revisando estrutura de la base de datos
+str(macroffqq)
+View(macroffqq)
+names(macroffqq)
+
+```
+
+
+```{r, filtrado}
+
+#Seleccionando solo las columnas con las abundancias
+macro_abund <- macroffqq %>% 
+  select(18:23)
+
+macro_abund[, 1:6] <- lapply(macro_abund[, 1:6], as.numeric)
+
+## filtrar la base quitando las filas que tengan solo ceros
+macro_abund <- macro_abund[rowSums(macro_abund[, 1:6]) > 0, ]
+
+##filtrando la base original para que tenga las mismas dimensiones que la de abundancias
+macroffqq2 <- macroffqq[rowSums(macroffqq[, 18:23]) > 0,]
+
+```
+
+## Análisis de escalamiento multidimensional no metrico NMDS
+
+Con este análisis se establecieron las disimilitudes en las comunidades de macroinvertebrados acuáticos en rios de Ecuador Etiopia y Vietnam.
+
+
+```{r, NMDS}
+#Explorando cuantas dimensiones debemos pedirle al NMDS
+##generando el screeplot con los resultados del NMDS hasta 10 dimensiones
+
+#library(goeveg)
+# set.seed(123)
+# dimcheckMDS(macro_abund, distance = "bray", k = 10)
+
+#NMDS incial
+set.seed(123)
+nmds1 <- metaMDS(macro_abund, distance = "bray", k = 3)
+
+##Revisar estres
+nmds1$stress
+
+```
+
+
+```{r}
+##Diagrama de shepard
+stressplot(nmds1)
+
+```
+
+El ajuste no metrico en el diagrama (R^2 = 0.991) fue bastante cercano a 1 por lo que la ordenación conserva muy bien la estructura original de las similitudes. Además, el ajuste lineal (R^2 = 0.95) es muy bueno y conserva bien las relaciones entre sitios.
+
+
+```{r}
+##Crear el grafico
+masterX::plot_mds(nmds1, meta_data = macroffqq2,
+                  group_col = "Country",
+                  overlay_type = "ellipses") +
+  theme_classic()
+```
+
+El análisis NMDS indica que las comunidades de insectos acuáticos entre los paises de  Etiopía y Ecuador son más parecidos entre si, y las comunidades de Vietnam presentan una diferenciación ligeramente más marcada. Además, entre Etiopía y Ecuador podría existir una mayor heterogeneidad en la composición, mientras que en Vietnam podría tener una menor variabilidad interna, sin embargo el eje NMDS1 podría indicar la existencia de un gradiente ambiental, esto podria ser representado por una o más variables que estarían estructurando las comunidades de insectos acuáticos.  
+
+
+## Análisis de componentes principales (PCA)
+
+Con este análisis se determinó la influencia de la estacionalidad sobre las abundancias de insectos acuáticos 
+
+
+```{r, PCA}
+macro_hell <- macro_abund %>% 
+  decostand("hellinger")
+
+
+#¿las variables son mediciones continuas?
+#View(macro_hell)
+
+#¿Hay relaciones lineales entre las variables? 
+#En este caso se trata de una matriz de diversidad (abundancias) transformada por lo cual se acepta 
+
+
+##Realizando el test de esfericidad de bartlet
+#H0: las variables son ortogonales (no correlacionadas)
+#Ha: las variables no son ortogonales (hay correlacion)
+
+mcor_macro <- cor(macro_hell, method = "kendall")
+cortest.bartlett(mcor_macro, n = nrow(macro_hell))
+```
+
+La prueba de esfericidad de bartlet (p < 0.05, se rechaza la hipótesis nula) indico que hay una correlación significativa entre las abundancias de los insectos acuáticos. Por lo tanto es válido aplicar un PCA. Dicha correlación se puede apreciar en el siguiente grafico: 
+
+```{r}
+##Revisando las correlaciones
+#library(ggcorrplot)
+cor_matrix <- cor(macro_hell, method = "kendall")
+ggcorrplot(cor_matrix, tl.cex = 6, type = "lower")
+```
+La familia Letophlebiidae se correlaciona positivamente con Hydroptilidae e Hydropsychidae, otras correlaciones positivas ocurren entre las familias libellulidae y Hidrpsychidae, y entre Hydroptilidae y Chironomidae. En cambio la familia Baetidae se correlaciona negativamente con Chironomidae, lo mismo ocurre entre Hydrosychidae y Chironomidae. 
+
+
+```{r, eval=FALSE, echo=FALSE}
+##Desarrollando diferentes PCA
+
+##tb-PCA con distancia de hellinger y estandariazación
+macro_pca1 <- prcomp(macro_hell, scale = T, center = T)
+
+
+##tb - PCA con distancia de Hellinger 
+macro_pca2 <- prcomp(macro_hell, scale = F, center = F)
+
+
+##tb - PCA con distancia de chord y estandarizado
+macro_pca3 <- prcomp(decostand(macro_hell, method = "normalize"), 
+                     scale = T, center = T)
+
+
+
+##tb-PCA con distancia de chi cuadrado y estandarizado
+macro_pca4 <- prcomp(decostand(macro_hell, method = "chi.square"),
+                    scale = T, center = T)
+
+
+##tb-PCA con distancia de Chord
+macro_pca5 <- prcomp(decostand(macro_hell, method = "normalize"),
+                     scale = F, center = F)
+
+
+##tb-PCA con distancia de chi cuadrado
+macro_pca6 <- prcomp(decostand(macro_hell, method = "chi.square"),
+                     scale = F, center = F)
+
+
+summary(macro_pca1)
+summary(macro_pca2)
+summary(macro_pca3)
+summary(macro_pca4)
+summary(macro_pca5)
+summary(macro_pca6)
+
+#library(factoextra)
+fviz_pca_biplot(macro_pca1)
+fviz_pca_biplot(macro_pca2)
+fviz_pca_biplot(macro_pca3)
+fviz_pca_biplot(macro_pca4)
+fviz_pca_biplot(macro_pca5)
+fviz_pca_biplot(macro_pca6)
+
+##El PCA1 es el mejor
+
+```
+
+
+```{r}
+
+##tb-PCA con distancia de hellinger y estandariazación
+macro_pca1 <- prcomp(macro_hell, scale = T, center = T)
+
+summary(macro_pca1)
+
+library(factoextra)
+
+fviz_pca_biplot(macro_pca1, title = "",
+                geom.ind = c("text", "point"),
+                geom.var = "none",
+                habillage = macroffqq2$Season,
+                addEllipses = TRUE) +
+  theme_classic()
+```
+
+El PCA reflejó que no existe una diferenciación clara entre las estaciones seca y humeda con base en la composición de insectos acuáticos. esto podria indicar que las condiciones ambientales no cambian tanto como para generar un cambio en la composición de insectos acuáticos. Además, es importante señalar que la varianza explicada por los dos ejes suma más del 50%, lo cual no es un porcentaje tan alto, esto podría deberse a que la estructura de datos se reparte en más dimensiones.
+
+
+## Análisis de redundancia (RDA)
+
+Mediante este análisis se determinó la influencia de variables fisicoquimicas sobre la abundancia de insectos acuáticos
+
+
+```{r}
+##Eliminar valores faltantes de la base de datos macroffqq
+macroffqq3 <- macroffqq %>% na.omit() 
+
+#str(macroffqq3)
+
+##Matriz de abundacias
+macro_abund2 <- macroffqq3 %>% 
+  select(18:23)
+
+##Matriz de variables fisicoquímicas
+macroffqq4 <- macroffqq3 %>% 
+  select(5:17)
+
+
+##Creando un tb-RDA Saturado
+RDA_saturado <- rda(macro_abund2 ~ ., data = macroffqq4, scale = TRUE)
+
+##Resumen estadistico. del tb-RDA
+#summary(RDA_saturado)
+
+## Identificar colineriadad y creación del modelo mejorado
+vif.cca(RDA_saturado) |> sort()
+
+## Creandon el tb-RDA sin la variable de ancho del rio
+RDA1 <- rda(macro_abund2 ~ . -Steam_Width, data = macroffqq4, scale = TRUE)
+
+##Creando tb-RDA con estep wise regression
+RDA_step <- ordistep(RDA_saturado)
+
+## Revisando nuevamente la colinearidad
+vif.cca(RDA1) |> sort(decreasing = TRUE)
+
+
+##Creando el modelo nulo
+RDA_nulo <-  rda(macro_abund2 ~ 1, data = macroffqq4, scale = TRUE)
+
+summary(RDA_nulo)
+```
+
+
+```{r, echo=FALSE, eval=FALSE}
+
+##Mejor set de variables con step wise regression
+RDA_step <- ordistep(RDA_saturado)
+
+summary(RDA_step)
+
+#Comparar metricas de los modelos
+RsquareAdj(RDA_saturado)$adj.r.squared
+RsquareAdj(RDA1)$adj.r.squared
+RsquareAdj(RDA_step)$adj.r.squared
+
+##Calcular el rmse
+rmse(RDA_saturado)
+rmse(RDA1)
+rmse(RDA_step)
+
+#significancia del modelo
+anova.cca(RDA_saturado, RDA_nulo)
+anova.cca(RDA1, RDA_nulo)
+anova.cca(RDA_step, RDA_nulo)
+
+##Prueba de significancia por ejes 
+##Significancia de cada eje canonico
+anova.cca(RDA_saturado, by = "axis")
+anova.cca(RDA1, by = "axis")
+anova.cca(RDA_step, by = "axis")
+
+##Test de significancia secuencial (orden de las variables)
+##Siginificancia secuencial de las variables en el orden en que se especificaron en el modelo
+anova.cca(RDA_saturado, by = "terms")
+anova.cca(RDA1, by = "terms")
+anova.cca(RDA_step, by = "terms")
+
+
+
+```
+
+```{r}
+
+##Evaluando el modelo
+RsquareAdj(RDA_step)$adj.r.squared
+rmse(RDA_step)
+
+##Significancia del modelo
+anova.cca(RDA_step, RDA_nulo)
+
+##Prueba de significancia por ejes
+anova.cca(RDA_step, by = "axis")
+
+
+##Graficación
+masterX::plot_ordination(RDA1, scaling = 3,
+                         segmentos_Yvar = TRUE)
+```
+Del total de la varianza explicada por las variables ambientales acerca de las comunidades de insectos acuáticos, el 96.4% se encuentra proyectada en los dos primeros ejes, lo cual es bastante alto. Los nitratos (NO3) en altas concentraciones pueden asociarse con la presencia de insectos de las familias Baetudae e Hydropsychidae. Por otra parte, la familia Chironomidae se relaciona con valores altos de demanda bioquíica de oxigeno (BOD). Otras familias como Libellulidae, Leptophlebiidae e Hydroptilidae se encuentran más relacionadas con la presencia de amonio (NH4). En general se puede observar una separación de las familias de insectos lo que podria indicar que la composición de insectos acuáticos esta influenciada por BOD, NH4 y NO3. Tambien es importante mencionar que muchos sitios estuviereon asociados con la presencia de amonio.
+
+
+
+
+
+
+
+
+
